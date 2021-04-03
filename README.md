@@ -103,7 +103,8 @@ Suppose you are working with the TensorFlow NLP BERT model that is released in M
 
 ```
 $ cd /path/to/Model-References/TensorFlow/nlp/bert/
-$ python3 ../../habana_model_runner.py --model bert --hb_config bert_base_pretraining_overfit.yaml >& ~/hlogs/bert_logs/bert_base_pretraining_overfit.txt
+$ export PYTHONPATH=/path/to/Model-References:$PYTHONPATH
+$ python3 /path/to/Model-References/central/habana_model_runner.py --framework tensorflow --model bert --hb_config hb_configs/bert_base_pretraining_overfit.yaml >& ~/hlogs/bert_logs/bert_base_pretraining_overfit.txt
 ```
 
 Now, to gather all aspects of the training run, including the model training Python code, the datasets and training output directories, run the gather_info_docker.py snapshot script as follows. Let's assume that the BERT overfit pretraining dataset has been mapped to "/software/data/bert_checkpoints" in the container.
