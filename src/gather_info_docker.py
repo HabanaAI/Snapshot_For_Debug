@@ -185,7 +185,8 @@ class SnapshotScriptDocker():
             this_filename = os.path.basename(__file__)
             cmd = f"grep {self.args.cmd_name} $HOME/.bash_history | grep -v {this_filename} | tail -1 > " + self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["cmdline"])
             self.run_cmd(cmd)
-            self.saveFile(self.args.yaml_config, "yamlconfig")
+            if self.args.yaml_config is not None:
+                self.saveFile(self.args.yaml_config, "yamlconfig")
         except Exception as exc:
             raise RuntimeError("Error in saveCmdlineAndOptions") from exc
 

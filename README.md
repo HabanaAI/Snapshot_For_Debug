@@ -9,11 +9,11 @@ The purpose of the snapshot scripts is to provide an automated way for the Haban
 
 There are two snapshot scripts provided, and they can be run in any order:
 
-- **gather_info_docker.py**
+- **`gather_info_docker.py`**
 
   This is run in the Habana docker container and gathers data about the training command-line, the environment variables that are set, python packages, contents of $HOME of the container which contains Python code to run training, model related artifacts such as datasets, output directories from training, etc.
 
-- **gather_info_host.py**
+- **`gather_info_host.py`**
 
   This is run outside of the Habana docker container, in an xterm on the same host machine. It takes the docker container ID as input and gathers information about the container such as the Habana TensorFlow docker image it is running, "docker stats" for memory usage, "docker inspect" on details on lower level resources controlled by docker, etc.
 
@@ -21,9 +21,9 @@ There are two snapshot scripts provided, and they can be run in any order:
 
 ## Run gather_info_docker.py in the Habana docker container running training
 
-The gather_info_docker.py script options are best described by its help message:
+The `gather_info_docker.py` script options are best described by its help message:
 
-```
+```bash
 $ cd /path/to/Snapshot_For_Debug/src
 $ python3 gather_info_docker.py --help
 
@@ -94,34 +94,34 @@ optional arguments:
 
 ### Example usage of gather_info_docker.py
 
-```
+```bash
 $ git clone https://github.com/HabanaAI/Model-References
 $ git clone https://github.com/HabanaAI/Snapshot_For_Debug
 ```
 
-Suppose you are working with the TensorFlow NLP BERT model that is released in Model-References. Run the training as described in the README document for TensorFlow/nlp/bert:
+Suppose you are working with the TensorFlow NLP BERT model that is released in Model-References. Run the training as described in the README.md document for TensorFlow/nlp/bert:
 
-```
+```bash
 $ cd /path/to/Model-References/TensorFlow/nlp/bert/
 $ export PYTHONPATH=/path/to/Model-References:$PYTHONPATH
-$ python3 /path/to/Model-References/central/habana_model_runner.py --framework tensorflow --model bert --hb_config hb_configs/bert_base_pretraining_overfit.yaml >& ~/hlogs/bert_logs/bert_base_pretraining_overfit.txt
+$ python3 demo_bert.py --command finetuning --model_variant large --data_type bf16 --test_set mrpc --dataset_path /software/data/tf/data/bert/MRPC 2>&1 | tee ~/hlogs/bert_large_finetuning_bf16_mrpc_1_card.txt
 ```
 
-Now, to gather all aspects of the training run, including the model training Python code, the datasets and training output directories, run the gather_info_docker.py snapshot script as follows. Let's assume that the BERT overfit pretraining dataset has been mapped to "/software/data/bert_checkpoints" in the container.
+Now, to gather all aspects of the training run, including the model training Python code, the datasets and training output directories, run the `gather_info_docker.py` snapshot script as follows. Let's assume that the user has some BERT checkpoints data stored in "/software/data/bert_checkpoints" in the container, that needs to be included in the packaged artifacts.
 
 A couple of important notes:
 
 - Please make sure that the directory specified for the **--outdir** option is mapped from the host system to the docker container
-- Please make sure that $HOME/.bash_history exists in the container shell, and if it doesn't, run "history -a" before invoking gather_info_docker.py so that it can correctly capture the training command-line invoked in the container shell
+- Please make sure that $HOME/.bash_history exists in the container shell, and if it doesn't, run "history -a" before invoking `gather_info_docker.py` so that it can correctly capture the training command-line invoked in the container shell
 
-```
+```bash
 $ cd /path/to/Snapshot_For_Debug/src
-$ python3 gather_info_docker.py --outdir ~/hlogs/bert_issues/snapshot_dir --stdout ~/hlogs/bert_logs/bert_base_pretraining_overfit.txt --yaml_config bert_base_pretraining_overfit.yaml -cmd habana_model_runner.py --copydirs /software/data/bert_checkpoints
+$ python3 gather_info_docker.py --outdir ~/hlogs/bert_issues/snapshot_dir --stdout ~/hlogs/bert_large_finetuning_bf16_mrpc_1_card.txt -cmd demo_bert.py --copydirs /software/data/bert_checkpoints
 ```
 
 This will generate the following directories under the outdir **$HOME/hlogs/bert_issues/snapshot_dir**:
 
-```
+```bash
 $ cd ~/hlogs/bert_issues/snapshot_dir
 $ ls -lt
 -rwxr-xr-x 1 root root 11643911026 Feb  8 15:00 gather_info_docker.tar.gz
@@ -143,11 +143,10 @@ drwxr-xr-x 2 root root   4096 Feb  8 15:00 habana_logs
 -rwxr-xr-x 1 root root    119 Feb  8 15:00 cmdline_invocation.txt
 -rwxr-xr-x 1 root root    276 Feb  8 15:00 execution-command-line-gather_info_docker.py.txt
 -rwxr-xr-x 1 root root 206149 Feb  8 15:00 cmd_stdout.txt
--rwxr-xr-x 1 root root   3158 Feb  8 15:00 model_yaml_config.txt
 -rwxr-xr-x 1 root root    271 Feb  8 15:00 docker_container_history.txt
 ```
 
-This is a summary of the information that gather_info_docker.py has gathered from your docker training session:
+This is a summary of the information that `gather_info_docker.py` has gathered from your docker training session:
 
 - **machine_cpumode.txt**
   CPU scaling governor settings (powersave, performance).
@@ -174,13 +173,13 @@ This is a summary of the information that gather_info_docker.py has gathered fro
 - **env_vars.txt**
   The environment variables set in the docker container shell
 - **cmdline_invocation.txt**
-  The latest invocation of the command name specified to the -cmd or --cmd_name option (e.g. habana_model_runner.py) in the container shell, including all the options it was run with. For this to work correctly, please make sure to run "history -a" in the container shell before running gather_info_docker.py.
+  The latest invocation of the command name specified to the -cmd or --cmd_name option (e.g. demo_bert.py) in the container shell, including all the options it was run with. For this to work correctly, please make sure to run "history -a" in the container shell before running `gather_info_docker.py`.
 - **execution-command-line-gather_info_docker.py.txt**
-  gather_info_docker.py's invocation command-line, along with the command-line options used
+  `gather_info_docker.py`'s invocation command-line, along with the command-line options used
 - **cmd_stdout.txt**
-  The content(s) of the file(s) specified to the --stdout and --stderr (if any) option(s) to gather_info_docker.py
+  The content(s) of the file(s) specified to the --stdout and --stderr (if any) option(s) to `gather_info_docker.py`
 - **model_yaml_config.txt**
-  The content of the file specified to the --yaml_config option to gather_info_docker.py
+  The content of the file specified to the --yaml_config option to `gather_info_docker.py`
 - **docker_container_history.txt**
   The results of running "history -a" in the docker container shell
 
@@ -188,9 +187,9 @@ This is a summary of the information that gather_info_docker.py has gathered fro
 
 ## Run gather_info_host.py in an xterm on the same host system, outside of the Habana docker container:
 
-The gather_info_host.py script options are best described by its help message:
+The `gather_info_host.py` script options are best described by its help message:
 
-```
+```bash
 $ cd /path/to/Snapshot_For_Debug/src
 $ python3 gather_info_host.py --help
 
@@ -214,21 +213,21 @@ optional arguments:
 
 ### Example usage of gather_info_host.py
 
-On the host that is running the docker training session, open an xterm and get the container ID of the docker session in which you ran the training session for which data is being packaged for Habana debug. In other words, get the container ID of the docker session in which you ran the "gather_info_docker.py" above.
-```
+On the host that is running the docker training session, open an xterm and get the container ID of the docker session in which you ran the training session for which data is being packaged for Habana debug. In other words, get the container ID of the docker session in which you ran the `gather_info_docker.py` above.
+```bash
 $ sudo docker ps
 ```
 
-Note the container ID of this docker session, and run gather_info_host.py with that container ID. You can pass the same --outdir argument as you did for gather_info_docker.py. gather_info_host.py will create a separate sub-directory called "gather_info_host" under this outdir.
+Note the container ID of this docker session, and run `gather_info_host.py` with that container ID. You can pass the same --outdir argument as you did for `gather_info_docker.py`. `gather_info_host.py` will create a separate sub-directory called "gather_info_host" under this outdir.
 
-```
+```bash
 $ cd /path/to/Snapshot_For_Debug/src
 $ sudo python3 gather_info_host.py --outdir ~/hlogs/bert_issues/snapshot_dir --container <container ID>
 ```
 
 This will generate the following directories under the outdir **$HOME/hlogs/bert_issues/snapshot_dir**:
 
-```
+```bash
 $ cd ~/hlogs/bert_issues/snapshot_dir
 $ ls -lt
 -rwxr-xr-x 1 root root        4253 Feb  8 15:00 gather_info_host.tar.gz
@@ -243,7 +242,7 @@ $ ls -lt
 -rwxr-xr-x 1 root root   146 Feb  8 15:00 execution-command-line-gather_info_host.py.txt
 ```
 
-This is a summary of the information that gather_info_host.py has gathered about the docker container that ran BERT pretraining:
+This is a summary of the information that `gather_info_host.py` has gathered about the docker container that ran BERT pretraining:
 
 - **docker_ps_cmd.txt**
   The details of the container ID, including the IMAGE, so that Habana knows the Habana docker image you are running
@@ -252,7 +251,7 @@ This is a summary of the information that gather_info_host.py has gathered about
 - **docker_inspect.txt**
   The output of running "docker inspect" with the given container ID, that includes additional system-level details about the docker container
 - **execution-command-line-gather_info_host.py.txt**
-  gather_info_host.py's invocation command-line, along with the command-line options used
+  `gather_info_host.py`'s invocation command-line, along with the command-line options used
 
 
 
