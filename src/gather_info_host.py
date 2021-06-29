@@ -63,6 +63,12 @@ class SnapshotScriptHost():
         self.args = args
         self.outdir_path = outdir_path
 
+    def generateHeader(self, str, sep='='):
+        print(f"\n")
+        print(f"{sep}" * 80)
+        print(str)
+        print(f"{sep}" * 80)
+
     def get_outdir_filename(self, filename):
         return str(self.outdir_path.joinpath(filename))
 
@@ -73,6 +79,7 @@ class SnapshotScriptHost():
 
     def saveDockerContainerInfoFromHost(self):
         try:
+            self.generateHeader('Saving docker inspect, docker stats, docker ps results')
             cmd = f"docker inspect {self.args.container_id} > " + self.get_outdir_filename(SnapshotScriptHost.STANDARD_FILE_NAMES["docker_inspect"])
             self.run_cmd(cmd)
             cmd = f"docker stats --no-stream --no-trunc {self.args.container_id} > " + self.get_outdir_filename(SnapshotScriptHost.STANDARD_FILE_NAMES["docker_stats"])
@@ -91,6 +98,7 @@ class SnapshotScriptHost():
             parent_dir = os.path.dirname(self.outdir_path)
             tardir_name = os.path.basename(os.path.normpath(self.outdir_path))
             tarfile_name = f"{tardir_name}.tar.gz"
+            self.generateHeader(f"Generating {parent_dir}/{tardir_name}.tar.gz")
             os.chdir(parent_dir)
             tar = tarfile.open(tarfile_name, 'x:gz')
             tar.add(tardir_name)

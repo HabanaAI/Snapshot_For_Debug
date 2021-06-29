@@ -2,21 +2,22 @@
 
 This repository contains Snapshot scripts for gathering information about the model and Habana training session for Habana analysis and debug.
 
-The purpose of the snapshot scripts is to provide an automated way for the Habana Model-References user to gather information relevant for Habana engineers to:
+The purpose of the snapshot scripts is to provide an automated way for the Habana user to gather information relevant for Habana engineers to:
 
 - Replicate any errors, crashes or other problems they are seeing with their models
 - Further analyze, debug and resolve these problems
+
+The Snapshot scripts assume that the user runs training on a Habana system that has been configured as in the [Gaudi Setup and Installation Guide](https://github.com/HabanaAI/Setup_and_Install).
 
 There are two snapshot scripts provided, and they can be run in any order:
 
 - **`gather_info_docker.py`**
 
-  This is run in the Habana docker container and gathers data about the training command-line, the environment variables that are set, python packages, contents of $HOME of the container which contains Python code to run training, model related artifacts such as datasets, output directories from training, etc.
+  This is run in the Habana docker container and gathers data about the training command-line, the environment variables that are set, python packages, contents of $HOME of the container which contains Python code to run training, model related artifacts such as datasets, output directories from training, etc. If the usage mode is bare metal, this script works just as well when run from a regular shell in a Habana system.
 
 - **`gather_info_host.py`**
 
-  This is run outside of the Habana docker container, in an xterm on the same host machine. It takes the docker container ID as input and gathers information about the container such as the Habana TensorFlow docker image it is running, "docker stats" for memory usage, "docker inspect" on details on lower level resources controlled by docker, etc.
-
+  This script can be skipped if running in bare metal usage mode. If training is run in a Habana docker container, this script is run outside of the container, in an xterm on the same host machine. It takes the docker container ID as input and gathers information about the container such as the Habana TensorFlow docker image it is running, `docker stats` for memory usage, `docker inspect` on details on lower level resources controlled by docker, etc.
 
 
 ## Run gather_info_docker.py in the Habana docker container running training
@@ -28,7 +29,7 @@ $ cd /path/to/Snapshot_For_Debug/src
 $ python3 gather_info_docker.py --help
 
 usage: gather_info_docker.py [-h] [-o OUTDIR] [-c] [--lite] -s STDOUT
-                             [-e STDERR] [-y YAML_CONFIG] -cmd CMD_NAME
+                             [-e STDERR] [-y YAML_CONFIG] [-cmd CMD_NAME]
                              [--copydirs COPYDIRS [COPYDIRS ...]]
 
 optional arguments:
@@ -37,7 +38,8 @@ optional arguments:
                         The output directory where all the files and other
                         information will be stored. The output will be stored
                         as an archive as well as the actual directory where
-                        all the contents are copied. Key assumptions: 1) The
+                        all the contents are copied. Please run 'history -a'
+                        before invoking this script. Key assumptions: 1) The
                         output directory specified here should be mapped to
                         the host via the docker run command-line. It should
                         have sufficient disk space to include the contents of
@@ -48,9 +50,11 @@ optional arguments:
                         assumes that the user invokes this script from a Unix
                         shell (and not from a Python interpreter shell)
                         running within a Habana TensorFlow/PyTorch Docker
-                        container. 3) The script also assumes that the user
-                        account used to run the docker container is either
-                        root or a user account with sudo access.
+                        container or from a shell running on a Habana system
+                        if the usage mode is bare metal. 3) The script also
+                        assumes that the user account used to run the docker
+                        container is either root or a user account with sudo
+                        access.
   -c, --clear           Delete the existing contents of the output directory
                         before copying over files from this run.
   --lite                Run a lite version of the snapshot script. This will
@@ -59,8 +63,8 @@ optional arguments:
                         output directories. Please use the --copydirs option
                         to specify any artifacts in the docker's file-system
                         that you want to be collected by this script, as a
-                        space-separated list of file/directory names following
-                        this option.
+                        space-separated list of fully path-qualified
+                        file/directory names following the --copydirs option.
   -s STDOUT, --stdout STDOUT
                         This is the fully path-qualified filename for the
                         stdout for the training run.
@@ -83,13 +87,13 @@ optional arguments:
                         this file does not exist, it can be created by running
                         'history -a' in the container.
   --copydirs COPYDIRS [COPYDIRS ...]
-                        Space-separated list of names of directories and files
-                        that are in the docker container, to be copied to the
-                        output directory. For e.g. this could be
-                        /software/data/bert_checkpoints. Unless you are using
-                        the --lite option, this list would typically not
-                        include files or directories that are under $HOME in
-                        the Habana docker container.
+                        Space-separated list of fully path-qualified names of
+                        files and directories that are in the docker
+                        container, to be copied to the output directory. For
+                        e.g. this could be /software/data/bert_checkpoints.
+                        Unless you are using the --lite option, this list
+                        would typically not include files or directories that
+                        are under $HOME in the Habana docker container.
 ```
 
 ### Example usage of gather_info_docker.py
@@ -107,12 +111,12 @@ $ export PYTHONPATH=/path/to/Model-References:$PYTHONPATH
 $ python3 demo_bert.py --command finetuning --model_variant large --data_type bf16 --test_set mrpc --dataset_path /software/data/tf/data/bert/MRPC 2>&1 | tee ~/hlogs/bert_large_finetuning_bf16_mrpc_1_card.txt
 ```
 
-Now, to gather all aspects of the training run, including the model training Python code, the datasets and training output directories, run the `gather_info_docker.py` snapshot script as follows. Let's assume that the user has some BERT checkpoints data stored in "/software/data/bert_checkpoints" in the container, that needs to be included in the packaged artifacts.
+Now, to gather all aspects of the training run, including the model training Python code, the datasets and training output directories, run the `gather_info_docker.py` snapshot script as follows. Let's assume that the user has some BERT checkpoints data stored in `/software/data/bert_checkpoints` in the container, that needs to be included in the packaged artifacts.
 
 A couple of important notes:
 
-- Please make sure that the directory specified for the **--outdir** option is mapped from the host system to the docker container
-- Please make sure that $HOME/.bash_history exists in the container shell, and if it doesn't, run "history -a" before invoking `gather_info_docker.py` so that it can correctly capture the training command-line invoked in the container shell
+- Please make sure that the directory specified for the **`--outdir`** option is mapped from the host system to the docker container
+- Please make sure that **`$HOME/.bash_history`** exists in the container shell, and if it doesn't, run `history -a` before invoking `gather_info_docker.py` so that it can correctly capture the training command-line invoked in the container shell
 
 ```bash
 $ cd /path/to/Snapshot_For_Debug/src
@@ -128,6 +132,9 @@ $ ls -lt
 drwxr-xr-x 5 root root        4096 Feb  8 15:00 gather_info_docker
 $ cd gather_info_docker/
 $ ls -lt
+-rwxr-xr-x 1 root root   2093 Feb  8 15:00 synapse_libs_info.txt
+-rwxr-xr-x 1 root root    526 Feb  8 15:00 platform_config_info.txt
+-rwxr-xr-x 1 root root    162 Feb  8 15:00 python_installation_info.txt
 -rwxr-xr-x 1 root root    960 Feb  8 15:00 machine_cpumode.txt
 -rwxr-xr-x 1 root root 142343 Feb  8 15:00 machine_cpuinfo.txt
 -rwxr-xr-x 1 root root  24178 Feb  8 15:00 machine_lspci.txt
@@ -148,41 +155,46 @@ drwxr-xr-x 2 root root   4096 Feb  8 15:00 habana_logs
 
 This is a summary of the information that `gather_info_docker.py` has gathered from your docker training session:
 
-- **machine_cpumode.txt**
-  CPU scaling governor settings (powersave, performance).
-- **machine_cpuinfo.txt**
+- **machine_cpumode.txt**  
+  CPU scaling governor settings (powersave, performance)
+- **machine_cpuinfo.txt**  
   Output of /proc/cpuinfo
-- **machine_lspci.txt**
+- **machine_lspci.txt**  
   Output of lspci
-- **machine_hlsmi.txt**
-  Output of running "hl-smi -q" that generates detailed information about the Habana system, # Gaudi cards available, their firmware versions, etc.
-- **machine_ipaddr.txt**
-  The machine's IP address, as returned by "hostname -I"
-- **machine_hostname.txt**
-  The machine's hostname, as returned by "hostname"
-- **docker_container_disk_usage.txt**
+- **machine_hlsmi.txt**  
+  Output of running `hl-smi -q` that generates detailed information about the Habana system, # Gaudi cards available, their firmware versions, etc.
+- **machine_ipaddr.txt**  
+  The machine's IP address, as returned by `hostname -I`
+- **machine_hostname.txt**  
+  The machine's hostname, as returned by `hostname`
+- **docker_container_disk_usage.txt**  
   The disk usage in $HOME of the container
-- **docker_container_python_pkgs.txt**
+- **docker_container_python_pkgs.txt**  
   The Python packages installed in the container, along with their version numbers
-- **docker_container_additional_dirs**
+- **docker_container_additional_dirs**  
   The files and directories specified following the --copydirs option
-- **docker_container_homedir_and_model_artifacts**
+- **docker_container_homedir_and_model_artifacts**  
   Everything under $HOME, excluding the highest-level directory in the path specified to --outdir (and its contents)
-- **habana_logs**
+- **habana_logs**  
   The contents of the directory referred to by the $HABANA_LOGS environment variable
-- **env_vars.txt**
+- **env_vars.txt**  
   The environment variables set in the docker container shell
-- **cmdline_invocation.txt**
-  The latest invocation of the command name specified to the -cmd or --cmd_name option (e.g. demo_bert.py) in the container shell, including all the options it was run with. For this to work correctly, please make sure to run "history -a" in the container shell before running `gather_info_docker.py`.
-- **execution-command-line-gather_info_docker.py.txt**
-  `gather_info_docker.py`'s invocation command-line, along with the command-line options used
-- **cmd_stdout.txt**
+- **cmdline_invocation.txt**  
+  The latest invocation of the command name specified to the -cmd or --cmd_name option (e.g. demo_bert.py) in the container shell, including all the options it was run with. For this to work correctly, please make sure to run `history -a` in the container shell before running `gather_info_docker.py`.
+- **cmd_stdout.txt**  
   The content(s) of the file(s) specified to the --stdout and --stderr (if any) option(s) to `gather_info_docker.py`
-- **model_yaml_config.txt**
+- **model_yaml_config.txt**  
   The content of the file specified to the --yaml_config option to `gather_info_docker.py`
-- **docker_container_history.txt**
-  The results of running "history -a" in the docker container shell
-
+- **docker_container_history.txt**  
+  The results of running `history -a` in the docker container shell
+- **python_installation_info.txt**  
+  Information about the python version installed in the docker container
+- **platform_config_info.txt**  
+  Information about the OS kernel version, platform version
+- **synapse_libs_info.txt**  
+  LD_LIBRARY_PATH and DYLD_LIBRARY_PATH environment variable settings, Synapse libraries installed in /usr/local
+- **execution-command-line-gather_info_docker.py.txt**  
+  `gather_info_docker.py`'s invocation command-line, along with the command-line options used
 
 
 ## Run gather_info_host.py in an xterm on the same host system, outside of the Habana docker container:
@@ -218,7 +230,7 @@ On the host that is running the docker training session, open an xterm and get t
 $ sudo docker ps
 ```
 
-Note the container ID of this docker session, and run `gather_info_host.py` with that container ID. You can pass the same --outdir argument as you did for `gather_info_docker.py`. `gather_info_host.py` will create a separate sub-directory called "gather_info_host" under this outdir.
+Note the container ID of this docker session, and run `gather_info_host.py` with that container ID. You can pass the same --outdir argument as you did for `gather_info_docker.py`. `gather_info_host.py` will create a separate sub-directory called `gather_info_host` under this outdir.
 
 ```bash
 $ cd /path/to/Snapshot_For_Debug/src
@@ -244,13 +256,13 @@ $ ls -lt
 
 This is a summary of the information that `gather_info_host.py` has gathered about the docker container that ran BERT pretraining:
 
-- **docker_ps_cmd.txt**
+- **docker_ps_cmd.txt**  
   The details of the container ID, including the IMAGE, so that Habana knows the Habana docker image you are running
-- **docker_stats.txt**
-  The output of running "docker stats" with the given container ID, that includes container resource usage statistics
-- **docker_inspect.txt**
-  The output of running "docker inspect" with the given container ID, that includes additional system-level details about the docker container
-- **execution-command-line-gather_info_host.py.txt**
+- **docker_stats.txt**  
+  The output of running `docker stats` with the given container ID, that includes container resource usage statistics
+- **docker_inspect.txt**  
+  The output of running `docker inspect` with the given container ID, that includes additional system-level details about the docker container
+- **execution-command-line-gather_info_host.py.txt**  
   `gather_info_host.py`'s invocation command-line, along with the command-line options used
 
 
@@ -261,4 +273,4 @@ Specific mechanisms for sharing the **gather_info_docker.tar.gz** and **gather_i
 
 
 ## Important note about security guidelines
-The snapshot scripts are only intended as a convenience for Habana users. Please make sure that the content that the snapshot scripts have gathered in the output directories "**gather_info_docker**" and "**gather_info_host**" is collateral that is NDA-protected and meets any security and IP protection requirements of that NDA. If needed, you can delete specific content from these directories and manually re-generate the **gather_info_docker.tar.gz** / **gather_info_host.tar.gz** files before sharing them with Habana.
+The snapshot scripts are only intended as a convenience for Habana users. Please make sure that the content that the snapshot scripts have gathered in the output directories **`gather_info_docker`** and **`gather_info_host`** is collateral that is NDA-protected and meets any security and IP protection requirements of that NDA. If needed, you can delete specific content from these directories and manually re-generate the **`gather_info_docker.tar.gz`** / **`gather_info_host.tar.gz`** files before sharing them with Habana.

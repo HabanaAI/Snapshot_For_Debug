@@ -10,12 +10,17 @@
 This python script is called for collecting info related to the training session
 from the Habana docker container in which the user has run training.
 The docker container should be run as root or with sudo.
+Revision log:
+-------------
+7/1/2021: Added code adapted from https://github.com/tensorflow/tensorflow/blob/master/tools/tf_env_collect.sh
+to report python installation info, platform config info, and Synapse libs info.
 """
 
 import os
 import sys
 import argparse
 import subprocess
+import platform
 import tarfile
 from helper_functions import get_canonical_path, create_output_dir
 
@@ -32,6 +37,7 @@ class GatherInfoDockerArgParser(argparse.ArgumentParser):
             The output directory where all the files and other information will be stored.
             The output will be stored as an archive as well as the actual directory where
             all the contents are copied.
+            Please run \'history -a\' before invoking this script.
             Key assumptions:
             1) The output directory specified here should be mapped to the host via the
                docker run command-line. It should have sufficient disk space to include
@@ -40,7 +46,8 @@ class GatherInfoDockerArgParser(argparse.ArgumentParser):
                E.g.: sudo docker run -it -v <host outdir path>:<docker container outdir path>
             2) This script assumes that the user invokes this script from a
                Unix shell (and not from a Python interpreter shell) running within a Habana
-               TensorFlow/PyTorch Docker container.
+               TensorFlow/PyTorch Docker container or from a shell running on a Habana system
+               if the usage mode is bare metal.
             3) The script also assumes that the user account used to run the docker container
                is either root or a user account with sudo access.
             """
@@ -55,8 +62,8 @@ class GatherInfoDockerArgParser(argparse.ArgumentParser):
             the files and directories under $HOME, i.e., it will not gather
             model artifacts and training output directories. Please use the --copydirs
             option to specify any artifacts in the docker's file-system that you want
-            to be collected by this script, as a space-separated list of file/directory
-            names following this option.
+            to be collected by this script, as a space-separated list of fully path-qualified
+            file/directory names following the --copydirs option.
             """
         )
         self.add_argument('-s', '--stdout', type=str, required=True, help="""
@@ -72,7 +79,7 @@ class GatherInfoDockerArgParser(argparse.ArgumentParser):
             This is the fully path-qualified filename for the yaml config file used for the training run.
             """
         )
-        self.add_argument('-cmd', '--cmd_name', type=str, required=True, help="""
+        self.add_argument('-cmd', '--cmd_name', type=str, required=False, help="""
             This is the command name that the script should search for in the history of the current shell
             to get the full training command-line invocation that the user ran.
             Caveats:
@@ -84,9 +91,9 @@ class GatherInfoDockerArgParser(argparse.ArgumentParser):
             """
         )
         self.add_argument('--copydirs', nargs="+", default = [], help="""
-            Space-separated list of names of directories and files that are in the docker container, to be copied
-            to the output directory. For e.g. this could be /software/data/bert_checkpoints. Unless you are using
-            the --lite option, this list would typically not include files or directories that are under $HOME
+            Space-separated list of fully path-qualified names of files and directories that are in the docker container,
+            to be copied to the output directory. For e.g. this could be /software/data/bert_checkpoints. Unless you are
+            using the --lite option, this list would typically not include files or directories that are under $HOME
             in the Habana docker container.
             """
         )
@@ -119,12 +126,21 @@ class SnapshotScriptDocker():
                            "machine_lspci" : "machine_lspci.txt",
                            "machine_cpuinfo" : "machine_cpuinfo.txt",
                            "machine_cpumode" : "machine_cpumode.txt",
-                           "machine_nicstatus" : "machine_Gaudi_NIC_status.txt"}
+                           "machine_nicstatus" : "machine_Gaudi_NIC_status.txt",
+                           "python_info" : "python_installation_info.txt",
+                           "platform_config_info" : "platform_config_info.txt",
+                           "synapse_libs_info" : "synapse_libs_info.txt"}
     STANDARD_INFO_FILE_NAMES = {}
 
     def __init__(self, args, outdir_path):
         self.args = args
         self.outdir_path = outdir_path
+
+    def generateHeader(self, str, sep='='):
+        print(f"\n")
+        print(f"{sep}" * 80)
+        print(str)
+        print(f"{sep}" * 80)
 
     def get_outdir_filename(self, filename):
         return str(self.outdir_path.joinpath(filename))
@@ -163,6 +179,7 @@ class SnapshotScriptDocker():
     # Save stdout & stderr from the run
     def saveCmdOutputs(self):
         try:
+            self.generateHeader('Saving command outputs')
             if os.path.exists(self.args.stdout):
                 self.saveFile(self.args.stdout, "stdout")
             else:
@@ -181,11 +198,14 @@ class SnapshotScriptDocker():
     # Save yaml config if available
     def saveCmdlineAndOptions(self):
         try:
-            self.run_cmd("history -a")
-            this_filename = os.path.basename(__file__)
-            cmd = f"grep {self.args.cmd_name} $HOME/.bash_history | grep -v {this_filename} | tail -1 > " + self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["cmdline"])
-            self.run_cmd(cmd)
+            if self.args.cmd_name is not None:
+                self.generateHeader('Saving training command line along with options')
+                self.run_cmd("history -a")
+                this_filename = os.path.basename(__file__)
+                cmd = f"grep {self.args.cmd_name} $HOME/.bash_history | grep -v {this_filename} | tail -1 > " + self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["cmdline"])
+                self.run_cmd(cmd)
             if self.args.yaml_config is not None:
+                self.generateHeader('Saving YAML configuration file used to run training')
                 self.saveFile(self.args.yaml_config, "yamlconfig")
         except Exception as exc:
             raise RuntimeError("Error in saveCmdlineAndOptions") from exc
@@ -193,6 +213,7 @@ class SnapshotScriptDocker():
     # Save the names and values of all environment variables set in the environment
     def saveEnvVars(self):
         try:
+            self.generateHeader('Saving environment variables')
             if os.path.exists(self.get_outdir_filename(TMPFILENAME)):
                 os.remove(self.get_outdir_filename(TMPFILENAME))
             cmd = f"env > " + self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["envvars"])
@@ -203,6 +224,7 @@ class SnapshotScriptDocker():
     # Save Synapse, HCL logs, etc. Habana log files
     def saveHabanaLogs(self):
         try:
+            self.generateHeader('Saving Habana log files')
             os.makedirs(self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["habanalogs"]), mode=0o777, exist_ok=True)
             logs_path = os.getenv('HABANA_LOGS')
             self.saveFile(f"{logs_path}/*", "habanalogs")
@@ -237,9 +259,10 @@ class SnapshotScriptDocker():
     # To keep things simple, copy all non-outdir content in $HOME to the outdir
     def saveModelSpecificArtifacts(self):
         if self.args.lite:
-            print("Skipping copying model artifacts, datasets, training run output directories, and other contents of $HOME since --lite option is specified...")
+            self.generateHeader("Skipping copying model artifacts, datasets, training run output directories, and other contents of $HOME since --lite option is specified...")
             return
         try:
+            self.generateHeader('Saving model artifacts, datasets, training run output directories, and other contents of $HOME')
             os.makedirs(self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["dockerc_homedir"]), mode=0o777, exist_ok=True)
             files_dirs_to_save = self.getHomeDirContentToSave()
             print('files_dirs_to_save: ', files_dirs_to_save)
@@ -252,6 +275,7 @@ class SnapshotScriptDocker():
     def saveAdditionalCopyDirs(self):
         try:
             if self.args.copydirs != []:
+                self.generateHeader('Saving user-specified copydirs')
                 print(f"copydirs = {self.args.copydirs}")
                 os.makedirs(self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["dockerc_copydir"]), mode=0o777, exist_ok=True)
                 for sv_file in self.args.copydirs:
@@ -269,6 +293,7 @@ class SnapshotScriptDocker():
     # - TBD: save the docker image?
     def saveDockerRunParameters(self):
         try:
+            self.generateHeader('Saving container command history, packages list, disk usage')
             self.run_cmd("history -a")
             self.saveFile("$HOME/.bash_history", "dockerc_history")
             cmd = f"pip list > " + self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["dockerc_pypkgs"])
@@ -284,6 +309,7 @@ class SnapshotScriptDocker():
     # - CPU scaling_governor
     def saveMachineStatus(self):
         try:
+            self.generateHeader('Saving machine-specific information (hl-smi, cpuinfo, etc.)')
             cmd = f"hostname > " + self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["machine_hostname"])
             self.run_cmd(cmd)
             cmd = f"hostname -I > " + self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["machine_ipaddr"])
@@ -300,6 +326,79 @@ class SnapshotScriptDocker():
         except Exception as exc:
             raise RuntimeError("Error in saveMachineStatus") from exc
 
+    def savePythonInstallationInfo(self):
+        OUTPUT_FILE = self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["python_info"])
+        print(f"Saving python installation info to {OUTPUT_FILE}")
+        out_fid = open(OUTPUT_FILE, 'a')
+        print("""python version: %s\npython branch: %s\npython build version: %s\npython compiler version: %s\npython implementation: %s""" %
+              (platform.python_version(), platform.python_branch(),
+               platform.python_build(), platform.python_compiler(), platform.python_implementation()), file=out_fid)
+        out_fid.close()
+
+    def saveOSVersionInfo(self):
+        OUTPUT_FILE = self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["platform_config_info"])
+        print(f"Saving platform configuration info to {OUTPUT_FILE}")
+        out_fid = open(OUTPUT_FILE, 'a')
+        def helper(tag, fn):
+            try:
+                print(tag + ': ', (eval('platform.' + fn))(), file=out_fid)
+            except:
+                print('Failed to run ', fn, file=out_fid)
+
+        helper('os', 'system')
+        helper('os kernel version', 'version')
+        helper('os release version', 'release')
+        helper('os platform', 'platform')
+        helper('linux distribution', 'linux_distribution')
+        helper('linux os distribution', 'dist')
+        helper('mac version', 'mac_ver')
+        helper('uname', 'uname')
+        helper('architecture', 'architecture')
+        helper('machine', 'machine')
+
+        try:
+            import distro
+            print('Distro info', distro.linux_distribution(), file=out_fid)
+        except ImportError:
+            print('distro not available', file=out_fid)
+        out_fid.close()
+
+    def saveSynapseLibsInfo(self):
+        OUTPUT_FILE = self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["synapse_libs_info"])
+        print(f"Saving LD_LIBRARY_PATH setting to {OUTPUT_FILE}")
+        out_fid = open(OUTPUT_FILE, 'a')
+        if os.environ.get('LD_LIBRARY_PATH'):
+            print(f"LD_LIBRARY_PATH {os.environ.get('LD_LIBRARY_PATH')}", file=out_fid)
+        else:
+            print("LD_LIBRARY_PATH is unset", file=out_fid)
+        print(f"Saving DYLD_LIBRARY_PATH setting to {OUTPUT_FILE}")
+        if os.environ.get('DYLD_LIBRARY_PATH'):
+            print(f"DYLD_LIBRARY_PATH {os.environ.get('DYLD_LIBRARY_PATH')}", file=out_fid)
+        else:
+            print("DYLD_LIBRARY_PATH is unset", file=out_fid)
+        out_fid.close()
+        print(f"Saving Synapse libs info to {OUTPUT_FILE}")
+        cmd = f"find /usr/local -type f -name 'libsynapse_helpers*'  2>/dev/null |  grep -v '\\.cache' >> {OUTPUT_FILE}"
+        self.run_cmd(cmd)
+        cmd = f"find /usr/local -type f -name 'synapse_logger*'  2>/dev/null  |  grep -v '\\.cache' >> {OUTPUT_FILE}"
+        self.run_cmd(cmd)
+        cmd = f"find /usr/local -type f -name 'libhccl*'  2>/dev/null  |  grep -v '\\.cache' >> {OUTPUT_FILE}"
+        self.run_cmd(cmd)
+        cmd = f"find /usr/local -type f -name 'graph_writer*'  2>/dev/null  |  grep -v '\\.cache' >> {OUTPUT_FILE}"
+        self.run_cmd(cmd)
+        cmd = f"find /usr/local -type f -name 'habana_device*'  2>/dev/null  |  grep -v '\\.cache' >> {OUTPUT_FILE}"
+        self.run_cmd(cmd)
+        cmd = f"find /usr/local -type f -name 'synapse_logger*'  2>/dev/null  |  grep -v '\\.cache' >> {OUTPUT_FILE}"
+        self.run_cmd(cmd)
+
+    def saveSystemConfig(self):
+        try:
+            self.generateHeader('Saving miscellaneous system configuration info')
+            self.savePythonInstallationInfo()
+            self.saveOSVersionInfo()
+            self.saveSynapseLibsInfo()
+        except Exception as exc:
+            raise RuntimeError("Error in saveSystemConfig") from exc
 
     # This generates a <args.outdir>.tar.gz in the parent directory of args.outdir
     # This generates a <args.outdir>.tar.gz in the parent directory of args.outdir
@@ -310,6 +409,7 @@ class SnapshotScriptDocker():
             parent_dir = os.path.dirname(self.outdir_path)
             tardir_name = os.path.basename(os.path.normpath(self.outdir_path))
             tarfile_name = f"{tardir_name}.tar.gz"
+            self.generateHeader(f"Generating {parent_dir}/{tardir_name}.tar.gz")
             os.chdir(parent_dir)
             print(f"Creating {tarfile_name}...")
             tar = tarfile.open(tarfile_name, 'x:gz')
@@ -331,6 +431,7 @@ class SnapshotScriptDocker():
         self.saveAdditionalCopyDirs()
         self.saveDockerRunParameters()
         self.saveMachineStatus()
+        self.saveSystemConfig()
         self.generateTarball()
         self.uploadTarball()
         print("Snapshot script completed successfully (from docker container)")
