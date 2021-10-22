@@ -296,7 +296,7 @@ class SnapshotScriptDocker():
             self.generateHeader('Saving container command history, packages list, disk usage')
             self.run_cmd("history -a")
             self.saveFile("$HOME/.bash_history", "dockerc_history")
-            cmd = f"pip list > " + self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["dockerc_pypkgs"])
+            cmd = f"pip3 list > " + self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["dockerc_pypkgs"])
             self.run_cmd(cmd)
             cmd = f"du -s -h ~/ > " + self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["dockerc_diskusage"])
             self.run_cmd(cmd)
