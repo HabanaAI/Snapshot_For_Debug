@@ -131,7 +131,8 @@ class SnapshotScriptDocker():
                            "python_info" : "python_installation_info.txt",
                            "platform_config_info" : "platform_config_info.txt",
                            "synapse_libs_info" : "synapse_libs_info.txt",
-                           "package_info" : "package_info.txt"}
+                           "package_info" : "package_info.txt",
+                           "dmesg_info" : "dmesg_info.txt"}
     STANDARD_INFO_FILE_NAMES = {}
 
     def __init__(self, args, outdir_path):
@@ -406,6 +407,11 @@ class SnapshotScriptDocker():
             cmd = f"echo 'Did not find dpkg or rpm package managers' >> {OUTPUT_FILE}"
         self.run_cmd(cmd)
 
+
+    def saveDmesgInfo(self):
+        OUTPUT_FILE = self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["dmesg_info"])
+        self.run_cmd(f'dmesg >> {OUTPUT_FILE}')
+
     def saveSystemConfig(self):
         try:
             self.generateHeader('Saving miscellaneous system configuration info')
@@ -413,6 +419,7 @@ class SnapshotScriptDocker():
             self.saveOSVersionInfo()
             self.saveSynapseLibsInfo()
             self.savePackageInfo()
+            self.saveDmesgInfo()
         except Exception as exc:
             raise RuntimeError("Error in saveSystemConfig") from exc
 
