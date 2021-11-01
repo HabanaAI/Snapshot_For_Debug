@@ -23,6 +23,7 @@ import subprocess
 import platform
 import tarfile
 from helper_functions import get_canonical_path, create_output_dir
+import distutils.spawn
 
 ACTUAL_CMD = os.path.realpath(sys.argv[0])
 INFO_TARBALL = "{}".format(os.path.splitext(os.path.basename(ACTUAL_CMD))[0])
@@ -129,7 +130,9 @@ class SnapshotScriptDocker():
                            "machine_nicstatus" : "machine_Gaudi_NIC_status.txt",
                            "python_info" : "python_installation_info.txt",
                            "platform_config_info" : "platform_config_info.txt",
-                           "synapse_libs_info" : "synapse_libs_info.txt"}
+                           "synapse_libs_info" : "synapse_libs_info.txt",
+                           "package_info" : "package_info.txt",
+                           "dmesg_info" : "dmesg_info.txt"}
     STANDARD_INFO_FILE_NAMES = {}
 
     def __init__(self, args, outdir_path):
@@ -391,12 +394,32 @@ class SnapshotScriptDocker():
         cmd = f"find /usr/local -type f -name 'synapse_logger*'  2>/dev/null  |  grep -v '\\.cache' >> {OUTPUT_FILE}"
         self.run_cmd(cmd)
 
+    def savePackageInfo(self):
+        OUTPUT_FILE = self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["package_info"])
+        found_dpkg = distutils.spawn.find_executable('dpkg') is not None
+        found_rpm = distutils.spawn.find_executable('rpm') is not None
+        command_helper = lambda pkg : f'{pkg} -l | grep habanalabs >> {OUTPUT_FILE}'
+        if found_dpkg:
+            cmd = command_helper('dpkg')
+        elif found_rpm:
+            cmd = command_helper('rpm')
+        else:
+            cmd = f"echo 'Did not find dpkg or rpm package managers' >> {OUTPUT_FILE}"
+        self.run_cmd(cmd)
+
+
+    def saveDmesgInfo(self):
+        OUTPUT_FILE = self.get_outdir_filename(SnapshotScriptDocker.STANDARD_FILE_NAMES["dmesg_info"])
+        self.run_cmd(f'dmesg >> {OUTPUT_FILE}')
+
     def saveSystemConfig(self):
         try:
             self.generateHeader('Saving miscellaneous system configuration info')
             self.savePythonInstallationInfo()
             self.saveOSVersionInfo()
             self.saveSynapseLibsInfo()
+            self.savePackageInfo()
+            self.saveDmesgInfo()
         except Exception as exc:
             raise RuntimeError("Error in saveSystemConfig") from exc
 
